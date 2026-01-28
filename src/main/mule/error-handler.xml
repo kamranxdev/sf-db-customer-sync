@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- ============================================== -->
+	<!-- Global Error Handler                          -->
+	<!-- Centralized error handling for all sync flows -->
+	<!-- ============================================== -->
+	<error-handler name="globalErrorHandler">
+		
+		<!-- Database Connectivity Error -->
+		<on-error-propagate type="DB:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Database Connection Error">
+			<logger level="ERROR" doc:name="Log Error" message="Database connection failed: #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: "DATABASE_CONNECTION_ERROR",
+	message: "Failed to connect to the database",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+
+		<!-- Database Query Error -->
+		<on-error-propagate type="DB:QUERY_EXECUTION" enableNotifications="true" logException="true" doc:name="Database Query Error">
+			<logger level="ERROR" doc:name="Log Error" message="Database query failed: #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: "DATABASE_QUERY_ERROR",
+	message: "Database query execution failed",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+
+		<!-- Salesforce Connectivity Error -->
+		<on-error-propagate type="SALESFORCE:CONNECTIVITY" enableNotifications="true" logException="true" doc:name="Salesforce Connection Error">
+			<logger level="ERROR" doc:name="Log Error" message="Salesforce connection failed: #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: "SALESFORCE_CONNECTION_ERROR",
+	message: "Failed to connect to Salesforce. Check credentials and security token.",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+
+		<!-- Salesforce Invalid Input Error -->
+		<on-error-propagate type="SALESFORCE:INVALID_INPUT" enableNotifications="true" logException="true" doc:name="Salesforce Validation Error">
+			<logger level="ERROR" doc:name="Log Error" message="Salesforce validation failed: #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: "SALESFORCE_VALIDATION_ERROR",
+	message: "Invalid data for Salesforce. Check required fields.",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+
+		<!-- Transformation Error -->
+		<on-error-propagate type="TRANSFORMATION" enableNotifications="true" logException="true" doc:name="Transformation Error">
+			<logger level="ERROR" doc:name="Log Error" message="Data transformation failed: #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: "TRANSFORMATION_ERROR",
+	message: "Data transformation failed",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+
+		<!-- Catch-All Error -->
+		<on-error-propagate type="ANY" enableNotifications="true" logException="true" doc:name="Generic Error">
+			<logger level="ERROR" doc:name="Log Error" message="Unexpected error: #[error.errorType.identifier] - #[error.description]"/>
+			<ee:transform doc:name="Error Response">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	errorType: error.errorType.identifier,
+	message: "An unexpected error occurred",
+	details: error.description,
+	timestamp: now(),
+	flowName: flow.name
+}]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+		
+	</error-handler>
+
+</mule>

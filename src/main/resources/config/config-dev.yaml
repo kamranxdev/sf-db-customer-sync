@@ -1,0 +1,20 @@
+# Development Environment Configuration
+
+# Database Configuration
+db:
+  host: "localhost"
+  port: "3306"
+  database: "customerdb"
+  user: "your_db_user"
+  password: "your_db_password"
+
+# Salesforce Configuration
+salesforce:
+  username: "your_salesforce_username"
+  password: "your_salesforce_password"
+  securityToken: "your_salesforce_security_token"
+  url: "https://login.salesforce.com/services/Soap/u/64.0"
+
+# Scheduler Configuration (24 hours = 86400000 ms)
+scheduler:
+  frequency: "60000"

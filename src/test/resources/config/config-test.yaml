@@ -1,0 +1,20 @@
+# Test Environment Configuration
+
+# Database Configuration (Mocked in tests)
+db:
+  host: "localhost"
+  port: "3306"
+  database: "test_customerdb"
+  user: "test_user"
+  password: "test_password"
+
+# Salesforce Configuration (Mocked in tests)
+salesforce:
+  username: "test@example.com"
+  password: "test-password"
+  securityToken: "test-token"
+  url: "https://login.salesforce.com/services/Soap/u/64.0"
+
+# Scheduler Configuration
+scheduler:
+  frequency: "60000"

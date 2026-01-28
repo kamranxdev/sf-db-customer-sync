@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+		http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- ================================================================== -->
+	<!-- UNIFIED BIDIRECTIONAL SYNC FLOW                                    -->
+	<!-- Uses EMAIL as the natural business key for matching records        -->
+	<!-- Single flow prevents race conditions and ensures data consistency  -->
+	<!-- ================================================================== -->
+	
+	<flow name="bidirectionalCustomerSync">
+		<scheduler doc:name="Sync Scheduler">
+			<scheduling-strategy>
+				<fixed-frequency frequency="${scheduler.frequency}" startDelay="10000" timeUnit="MILLISECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		
+		<logger level="INFO" doc:name="Log Start" message="Bidirectional sync started at #[now()]"/>
+		
+		<!-- STEP 1: Fetch all data from both systems -->
+		<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+		
+		<!-- STEP 2: Sync DB records to Salesforce -->
+		<flow-ref doc:name="Sync DB to Salesforce" name="syncDbToSalesforce"/>
+		
+		<!-- STEP 3: Sync Salesforce-only records to DB -->
+		<flow-ref doc:name="Sync Salesforce to DB" name="syncSalesforceToDb"/>
+		
+		<logger level="INFO" doc:name="Log Complete" message="Bidirectional sync completed successfully"/>
+		
+		<error-handler ref="globalErrorHandler"/>
+	</flow>
+
+	<!-- ================================================================== -->
+	<!-- SUB-FLOW: Fetch all data from both systems                         -->
+	<!-- ================================================================== -->
+	<sub-flow name="fetchAllData">
+		<!-- Fetch all customers from Database -->
+		<db:select doc:name="Select All Customers" config-ref="Database_Config">
+			<db:sql><![CDATA[SELECT customer_id, salesforce_id, first_name, last_name, email, phone, last_modified_date 
+FROM customers 
+WHERE last_modified_date >= DATE_SUB(NOW(), INTERVAL 1 DAY) 
+   OR salesforce_id IS NULL]]></db:sql>
+		</db:select>
+		<set-variable doc:name="Store DB Customers" variableName="dbCustomers" value="#[payload]"/>
+		<logger level="INFO" doc:name="Log DB Count" message="Fetched #[sizeOf(vars.dbCustomers)] customers from DB"/>
+		
+		<!-- Fetch all contacts from Salesforce -->
+		<salesforce:query doc:name="Query All Contacts" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query><![CDATA[SELECT Id, FirstName, LastName, Email, Phone, LastModifiedDate 
+FROM Contact 
+WHERE LastModifiedDate >= YESTERDAY 
+   OR Email != null]]></salesforce:salesforce-query>
+		</salesforce:query>
+		<ee:transform doc:name="Convert SF to List">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable doc:name="Store SF Contacts" variableName="sfContacts" value="#[payload]"/>
+		<logger level="INFO" doc:name="Log SF Count" message="Fetched #[sizeOf(vars.sfContacts)] contacts from Salesforce"/>
+		
+		<!-- Create lookup map: email -> salesforce record -->
+		<ee:transform doc:name="Create SF Email Lookup">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	byEmail: vars.sfContacts groupBy ((item) -> lower(item.Email default ""))
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable doc:name="Store SF Lookup" variableName="sfLookup" value="#[payload.byEmail]"/>
+	</sub-flow>
+
+	<!-- ================================================================== -->
+	<!-- SUB-FLOW: Sync Database records to Salesforce                      -->
+	<!-- Upserts DB customers to SF and updates DB with SF IDs              -->
+	<!-- ================================================================== -->
+	<sub-flow name="syncDbToSalesforce">
+		<ee:transform doc:name="Prepare DB Records for SF">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.dbCustomers filter (!isEmpty($.email)) map (customer) -> {
+	// Check if this email already exists in Salesforce
+	existingSfRecord: vars.sfLookup[lower(customer.email)][0] default null,
+	dbRecord: customer
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable doc:name="Store Mapped Records" variableName="mappedRecords" value="#[payload]"/>
+		
+		<choice doc:name="Check Records to Sync">
+			<when expression="#[sizeOf(vars.mappedRecords) > 0]">
+				<!-- Transform to Salesforce format using Email as external ID -->
+				<ee:transform doc:name="Transform to SF Format">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.mappedRecords map (record) -> {
+	// If SF record exists, include Id to update; otherwise create new
+	(Id: record.existingSfRecord.Id) if (record.existingSfRecord != null),
+	FirstName: record.dbRecord.first_name,
+	LastName: record.dbRecord.last_name,
+	Email: record.dbRecord.email,
+	Phone: record.dbRecord.phone
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				
+				<!-- Upsert to Salesforce using Email -->
+				<salesforce:upsert doc:name="Upsert to Salesforce" config-ref="Salesforce_Config" objectType="Contact" externalIdFieldName="Email"/>
+				
+				<!-- Store upsert results -->
+				<set-variable doc:name="Store SF Results" variableName="sfResults" value="#[payload]"/>
+				
+				<!-- Update DB with Salesforce IDs -->
+				<ee:transform doc:name="Prepare DB Updates">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+(vars.sfResults.items default vars.sfResults) map ((result, index) -> {
+	salesforce_id: result.id,
+	customer_id: vars.mappedRecords[index].dbRecord.customer_id
+}) filter ($.salesforce_id != null and $.customer_id != null)]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				
+				<foreach doc:name="Update DB with SF IDs">
+					<db:update doc:name="Set Salesforce ID" config-ref="Database_Config">
+						<db:sql><![CDATA[UPDATE customers 
+SET salesforce_id = :salesforce_id, last_modified_date = last_modified_date 
+WHERE customer_id = :customer_id]]></db:sql>
+						<db:input-parameters><![CDATA[#[{
+	salesforce_id: payload.salesforce_id,
+	customer_id: payload.customer_id
+}]]]></db:input-parameters>
+					</db:update>
+				</foreach>
+				
+				<logger level="INFO" doc:name="Log DB to SF Complete" message="Synced #[sizeOf(vars.mappedRecords)] records from DB to Salesforce"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Log No DB Records" message="No DB records to sync to Salesforce"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+	<!-- ================================================================== -->
+	<!-- SUB-FLOW: Sync Salesforce-only records to Database                 -->
+	<!-- Only syncs contacts that don't exist in DB (by email)              -->
+	<!-- ================================================================== -->
+	<sub-flow name="syncSalesforceToDb">
+		<!-- Create DB email lookup -->
+		<ee:transform doc:name="Create DB Email Set">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.dbCustomers map (c) -> lower(c.email default "")]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable doc:name="Store DB Emails" variableName="dbEmails" value="#[payload]"/>
+		
+		<!-- Find SF contacts not in DB -->
+		<ee:transform doc:name="Find SF-Only Contacts">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.sfContacts filter (contact) -> (
+	!isEmpty(contact.Email) and 
+	!(vars.dbEmails contains lower(contact.Email))
+)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable doc:name="Store SF Only" variableName="sfOnlyContacts" value="#[payload]"/>
+		
+		<choice doc:name="Check SF-Only Records">
+			<when expression="#[sizeOf(vars.sfOnlyContacts) > 0]">
+				<ee:transform doc:name="Transform to DB Format">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.sfOnlyContacts map (contact) -> {
+	salesforce_id: contact.Id,
+	first_name: contact.FirstName default "",
+	last_name: contact.LastName default "Unknown",
+	email: contact.Email,
+	phone: contact.Phone
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				
+				<foreach doc:name="Insert SF Contacts to DB">
+					<db:insert doc:name="Insert Customer" config-ref="Database_Config">
+						<db:sql><![CDATA[INSERT INTO customers (salesforce_id, first_name, last_name, email, phone, last_modified_date)
+VALUES (:salesforce_id, :first_name, :last_name, :email, :phone, NOW())
+ON DUPLICATE KEY UPDATE
+salesforce_id = :salesforce_id, first_name = :first_name, last_name = :last_name, 
+phone = :phone, last_modified_date = NOW()]]></db:sql>
+						<db:input-parameters><![CDATA[#[{
+	salesforce_id: payload.salesforce_id,
+	first_name: payload.first_name,
+	last_name: payload.last_name,
+	email: payload.email,
+	phone: payload.phone
+}]]]></db:input-parameters>
+					</db:insert>
+				</foreach>
+				
+				<logger level="INFO" doc:name="Log SF to DB Complete" message="Synced #[sizeOf(vars.sfOnlyContacts)] SF-only contacts to DB"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Log No SF-Only Records" message="No SF-only records to sync to DB"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+</mule>

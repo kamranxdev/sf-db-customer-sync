@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+	xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+		http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+	<munit:config name="db-to-sf-sync-test-suite.xml"/>
+
+	<!-- ============================================== -->
+	<!-- Test 1: Happy Path - DB to SF Sync            -->
+	<!-- Tests syncDbToSalesforce sub-flow             -->
+	<!-- ============================================== -->
+	<munit:test name="db-to-sf-happy-path-test" description="Test successful sync from Database to Salesforce using email as business key">
+		
+		<munit:behavior>
+			<!-- Mock Database Select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{customer_id: 1001, salesforce_id: null, first_name: 'John', last_name: 'Doe', email: 'john.doe@test.com', phone: '555-1234', last_modified_date: now()},
+						{customer_id: 1002, salesforce_id: null, first_name: 'Jane', last_name: 'Smith', email: 'jane.smith@test.com', phone: '555-5678', last_modified_date: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003XXX1', successful: true}, {id: '003XXX2', successful: true}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Database Update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<!-- Execute fetch all data sub-flow -->
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<!-- Execute DB to SF sync sub-flow -->
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert DB Customers Fetched" expression="#[sizeOf(vars.dbCustomers)]" is="#[MunitTools::equalTo(2)]"/>
+			<munit-tools:assert-that doc:name="Assert Payload Not Null" expression="#[payload]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- ============================================== -->
+	<!-- Test 2: Empty Records - No Data to Sync       -->
+	<!-- ============================================== -->
+	<munit:test name="db-to-sf-empty-records-test" description="Test sync when no records returned from database">
+		
+		<munit:behavior>
+			<!-- Mock Database returning empty list -->
+			<munit-tools:mock-when doc:name="Mock DB Empty" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert Zero DB Records" expression="#[sizeOf(vars.dbCustomers)]" is="#[MunitTools::equalTo(0)]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- ============================================== -->
+	<!-- Test 3: Database Connection Error             -->
+	<!-- ============================================== -->
+	<munit:test name="db-to-sf-db-error-test" description="Test database connection error handling" expectedErrorType="DB:CONNECTIVITY">
+		
+		<munit:behavior>
+			<!-- Mock Database throwing connectivity error -->
+			<munit-tools:mock-when doc:name="Mock DB Error" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:CONNECTIVITY"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- ============================================== -->
+	<!-- Test 4: Salesforce Upsert Error               -->
+	<!-- ============================================== -->
+	<munit:test name="db-to-sf-sf-error-test" description="Test Salesforce error handling" expectedErrorType="SALESFORCE:CONNECTIVITY">
+		
+		<munit:behavior>
+			<!-- Mock successful DB select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: 'Test', last_name: 'User', email: 'test@test.com', phone: '555-0000', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce throwing connectivity error -->
+			<munit-tools:mock-when doc:name="Mock SF Error" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="SALESFORCE:CONNECTIVITY"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- ============================================== -->
+	<!-- Test 5: Email Matching - Existing SF Record   -->
+	<!-- ============================================== -->
+	<munit:test name="db-to-sf-email-match-test" description="Test that DB record matches existing SF contact by email and updates it">
+		
+		<munit:behavior>
+			<!-- Mock Database Select with a customer -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{customer_id: 1001, salesforce_id: null, first_name: 'John', last_name: 'Doe', email: 'john.doe@test.com', phone: '555-1234-NEW', last_modified_date: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Query returning existing contact with same email -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{Id: '003EXISTING', FirstName: 'John', LastName: 'Doe', Email: 'john.doe@test.com', Phone: '555-1234-OLD', LastModifiedDate: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Salesforce Upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003EXISTING', successful: true}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock Database Update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert SF Lookup Created" expression="#[vars.sfLookup]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Mapped Records Created" expression="#[vars.mappedRecords]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+</mule>

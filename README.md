@@ -14,24 +14,24 @@
 
 ## 📋 Table of Contents
 
-1. [Overview](#-overview)
-2. [Prerequisites](#-prerequisites)
-3. [Installation & Setup](#-installation--setup)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Installation & Setup](#installation--setup)
    - [Salesforce Configuration](#step-1-salesforce-developer-account)
    - [Database Setup](#step-3-mysql-database-setup)
    - [Application Configuration](#step-4-application-configuration)
-4. [Running the Application](#-running-the-application)
-5. [MUnit Testing](#-munit-testing)
+4. [Running the Application](#running-the-application)
+5. [MUnit Testing](#munit-testing)
    - [Running MUnit Tests](#running-munit-tests)
    - [Test Suites Overview](#test-suites-overview)
    - [Understanding Test Structure](#understanding-munit-test-structure)
-6. [Integration Testing](#-integration-testing)
+6. [Integration Testing](#integration-testing)
    - [DB → Salesforce Sync](#test-scenario-1-database--salesforce)
    - [Salesforce → DB Sync](#test-scenario-2-salesforce--database)
-7. [Architecture](#-architecture)
-8. [Field Mapping](#-field-mapping)
-9. [Troubleshooting](#-troubleshooting)
-10. [Additional Resources](#-additional-resources)
+7. [Architecture](#architecture)
+8. [Field Mapping](#field-mapping)
+9. [Troubleshooting](#troubleshooting)
+10. [Additional Resources](#additional-resources)
 
 ---
 

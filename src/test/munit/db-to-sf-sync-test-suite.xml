@@ -10,6 +10,7 @@
 		http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
 
 	<munit:config name="db-to-sf-sync-test-suite.xml"/>
+	<global-property doc:name="Global Property" name="env" value="test" />
 
 	<!-- ============================================== -->
 	<!-- Test 1: Happy Path - DB to SF Sync            -->

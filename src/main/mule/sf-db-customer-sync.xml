@@ -11,11 +11,7 @@
 		http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
 		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
-	<!-- ================================================================== -->
-	<!-- UNIFIED BIDIRECTIONAL SYNC FLOW                                    -->
-	<!-- Uses EMAIL as the natural business key for matching records        -->
-	<!-- Single flow prevents race conditions and ensures data consistency  -->
-	<!-- ================================================================== -->
+	<!-- Unified bidirectional sync flow using Email as the business key to match records and ensure data consistency -->
 	
 	<flow name="bidirectionalCustomerSync">
 		<scheduler doc:name="Sync Scheduler">
@@ -40,9 +36,7 @@
 		<error-handler ref="globalErrorHandler"/>
 	</flow>
 
-	<!-- ================================================================== -->
-	<!-- SUB-FLOW: Fetch all data from both systems                         -->
-	<!-- ================================================================== -->
+	<!-- Sub-flow to fetch all data from both systems -->
 	<sub-flow name="fetchAllData">
 		<!-- Fetch all customers from Database -->
 		<db:select doc:name="Select All Customers" config-ref="Database_Config">
@@ -86,10 +80,7 @@ output application/java
 		<set-variable doc:name="Store SF Lookup" variableName="sfLookup" value="#[payload.byEmail]"/>
 	</sub-flow>
 
-	<!-- ================================================================== -->
-	<!-- SUB-FLOW: Sync Database records to Salesforce                      -->
-	<!-- Upserts DB customers to SF and updates DB with SF IDs              -->
-	<!-- ================================================================== -->
+	<!-- Sub-flow to sync Database records to Salesforce, upserting customers and updating the Database with Salesforce IDs -->
 	<sub-flow name="syncDbToSalesforce">
 		<ee:transform doc:name="Prepare DB Records for SF">
 			<ee:message>
@@ -163,10 +154,7 @@ WHERE customer_id = :customer_id]]></db:sql>
 		</choice>
 	</sub-flow>
 
-	<!-- ================================================================== -->
-	<!-- SUB-FLOW: Sync Salesforce-only records to Database                 -->
-	<!-- Only syncs contacts that don't exist in DB (by email)              -->
-	<!-- ================================================================== -->
+	<!-- Sub-flow to sync Salesforce-only records to Database, processing contacts that do not exist in the Database -->
 	<sub-flow name="syncSalesforceToDb">
 		<!-- Create DB email lookup -->
 		<ee:transform doc:name="Create DB Email Set">

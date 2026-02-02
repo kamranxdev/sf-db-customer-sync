@@ -89,12 +89,12 @@ output application/json
 			</ee:transform>
 		</on-error-propagate>
 
-		<!-- Transformation Error -->
-		<on-error-propagate type="TRANSFORMATION" enableNotifications="true" logException="true" doc:name="Transformation Error">
-			<logger level="ERROR" doc:name="Log Error" message="Data transformation failed: #[error.description]"/>
-			<ee:transform doc:name="Error Response">
-				<ee:message>
-					<ee:set-payload><![CDATA[%dw 2.0
+	<!-- Transformation Error -->
+	<on-error-propagate type="MULE:EXPRESSION" enableNotifications="true" logException="true" doc:name="Transformation Error">
+		<logger level="ERROR" doc:name="Log Error" message="Data transformation failed: #[error.description]"/>
+		<ee:transform doc:name="Error Response">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -104,11 +104,10 @@ output application/json
 	timestamp: now(),
 	flowName: flow.name
 }]]></ee:set-payload>
-				</ee:message>
-			</ee:transform>
-		</on-error-propagate>
-
-		<!-- Catch-All Error -->
+			</ee:message>
+		</ee:transform>
+	</on-error-propagate>		
+	<!-- Catch-All Error -->
 		<on-error-propagate type="ANY" enableNotifications="true" logException="true" doc:name="Generic Error">
 			<logger level="ERROR" doc:name="Log Error" message="Unexpected error: #[error.errorType.identifier] - #[error.description]"/>
 			<ee:transform doc:name="Error Response">

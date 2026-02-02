@@ -423,4 +423,624 @@
 		</munit:execution>
 	</munit:test>
 
+	<!-- ================================================================== -->
+	<!-- ADDITIONAL ERROR HANDLING TESTS FOR IMPROVED COVERAGE              -->
+	<!-- ================================================================== -->
+
+	<!-- Test: Database Query Execution Error -->
+	<munit:test name="db-query-execution-error-test" description="Test database query execution error handling" expectedErrorType="DB:QUERY_EXECUTION">
+		<munit:behavior>
+			<!-- Mock Database throwing query execution error -->
+			<munit-tools:mock-when doc:name="Mock DB Query Error" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- Test: Database Update Error -->
+	<munit:test name="db-update-error-test" description="Test database update operation error" expectedErrorType="DB:QUERY_EXECUTION">
+		<munit:behavior>
+			<!-- Mock successful DB select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: 'Test', last_name: 'User', email: 'test@test.com', phone: '555-0000', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock successful SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock successful SF upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003XXX', successful: true}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB update throwing query execution error -->
+			<munit-tools:mock-when doc:name="Mock DB Update Error" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- Test: Salesforce Invalid Input Error -->
+	<munit:test name="sf-invalid-input-error-test" description="Test Salesforce validation error for invalid data" expectedErrorType="SALESFORCE:INVALID_INPUT">
+		<munit:behavior>
+			<!-- Mock successful DB select with invalid data -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: '', last_name: '', email: 'invalid-email', phone: '555-0000', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock successful SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert throwing validation error -->
+			<munit-tools:mock-when doc:name="Mock SF Validation Error" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="SALESFORCE:INVALID_INPUT"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- Test: Transformation Error -->
+	<munit:test name="transformation-error-test" description="Test transformation error handling" expectedErrorType="MULE:EXPRESSION">
+		<munit:behavior>
+			<!-- Mock DB select with malformed data that causes transformation error -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#['invalid data structure']"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- Test: Salesforce Upsert Partial Failure -->
+	<munit:test name="sf-upsert-partial-failure-test" description="Test handling of partial Salesforce upsert failures">
+		<munit:behavior>
+			<!-- Mock DB select with multiple records -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{customer_id: 1, salesforce_id: null, first_name: 'John', last_name: 'Doe', email: 'john@test.com', phone: '555-1111', last_modified_date: now()},
+						{customer_id: 2, salesforce_id: null, first_name: 'Jane', last_name: 'Smith', email: 'jane@test.com', phone: '555-2222', last_modified_date: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert with partial success -->
+			<munit-tools:mock-when doc:name="Mock SF Partial Success" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003XXX1', successful: true}, {id: null, successful: false, errors: [{message: 'Required field missing'}]}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Verify that successful records were processed -->
+			<munit-tools:assert-that doc:name="Assert Results Present" expression="#[vars.sfResults]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Empty Email Filtering -->
+	<munit:test name="empty-email-filtering-test" description="Test that records with empty emails are filtered out">
+		<munit:behavior>
+			<!-- Mock DB select with mixed data (some with empty emails) -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{customer_id: 1, salesforce_id: null, first_name: 'Valid', last_name: 'User', email: 'valid@test.com', phone: '555-1111', last_modified_date: now()},
+						{customer_id: 2, salesforce_id: null, first_name: 'Invalid', last_name: 'User', email: '', phone: '555-2222', last_modified_date: now()},
+						{customer_id: 3, salesforce_id: null, first_name: 'Null', last_name: 'User', email: null, phone: '555-3333', last_modified_date: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003XXX', successful: true}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Verify that only 1 record with valid email is processed -->
+			<munit-tools:assert-that doc:name="Assert Only Valid Records" expression="#[sizeOf(vars.mappedRecords)]" is="#[MunitTools::equalTo(1)]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Null Salesforce ID Handling -->
+	<munit:test name="null-sf-id-handling-test" description="Test handling when Salesforce returns null ID in upsert result">
+		<munit:behavior>
+			<!-- Mock DB select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: 'Test', last_name: 'User', email: 'test@test.com', phone: '555-0000', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert returning null ID -->
+			<munit-tools:mock-when doc:name="Mock SF Null ID" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: null, successful: false}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- DB update should not be called if SF ID is null -->
+			<munit-tools:verify-call doc:name="Verify DB Update Not Called" processor="db:update" times="0"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Database Insert Constraint Violation -->
+	<munit:test name="db-insert-constraint-error-test" description="Test database constraint violation during SF to DB sync" expectedErrorType="DB:QUERY_EXECUTION">
+		<munit:behavior>
+			<!-- Mock DB select returning empty -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query with contact -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{Id: '003XXX', FirstName: 'Test', LastName: 'User', Email: 'test@test.com', Phone: '555-0000', LastModifiedDate: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB insert throwing constraint violation -->
+			<munit-tools:mock-when doc:name="Mock DB Constraint Error" processor="db:insert">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync SF to DB" name="syncSalesforceToDb"/>
+		</munit:execution>
+	</munit:test>
+
+	<!-- Test: SF Query with Missing Required Fields -->
+	<munit:test name="sf-query-missing-fields-test" description="Test handling of Salesforce query error">
+		<munit:behavior>
+			<!-- Mock DB select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query with contacts having missing fields -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[
+						{Id: '003XXX1', FirstName: 'Complete', LastName: 'User', Email: 'complete@test.com', Phone: '555-1111', LastModifiedDate: now()},
+						{Id: '003XXX2', FirstName: null, LastName: null, Email: 'incomplete@test.com', Phone: null, LastModifiedDate: now()}
+					]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB insert -->
+			<munit-tools:mock-when doc:name="Mock DB Insert" processor="db:insert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync SF to DB" name="syncSalesforceToDb"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Verify both contacts are processed (transformation handles nulls) -->
+			<munit-tools:assert-that doc:name="Assert SF Only Contacts" expression="#[sizeOf(vars.sfOnlyContacts)]" is="#[MunitTools::equalTo(2)]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Large Dataset Handling -->
+	<munit:test name="large-dataset-test" description="Test sync with large number of records">
+		<munit:behavior>
+			<!-- Mock DB select with many records -->
+			<munit-tools:mock-when doc:name="Mock DB Large Dataset" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[(1 to 100) map {customer_id: $, salesforce_id: null, first_name: 'User' ++ $, last_name: 'Test' ++ $, email: 'user' ++ $ ++ '@test.com', phone: '555-' ++ $, last_modified_date: now()}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: (1 to 100) map {id: '003XXX' ++ $, successful: true}}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Verify all 100 records are processed -->
+			<munit-tools:assert-that doc:name="Assert 100 Records" expression="#[sizeOf(vars.dbCustomers)]" is="#[MunitTools::equalTo(100)]"/>
+			<munit-tools:assert-that doc:name="Assert Mapped Records" expression="#[sizeOf(vars.mappedRecords)]" is="#[MunitTools::equalTo(100)]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Case Insensitive Email Matching -->
+	<munit:test name="case-insensitive-email-match-test" description="Test that email matching is case-insensitive">
+		<munit:behavior>
+			<!-- Mock DB with lowercase email -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: 'John', last_name: 'Doe', email: 'john.doe@test.com', phone: '555-1111', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF with uppercase email -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{Id: '003XXX', FirstName: 'John', LastName: 'Doe', Email: 'JOHN.DOE@TEST.COM', Phone: '555-1111', LastModifiedDate: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF upsert -->
+			<munit-tools:mock-when doc:name="Mock SF Upsert" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{items: [{id: '003XXX', successful: true}]}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock DB update -->
+			<munit-tools:mock-when doc:name="Mock DB Update" processor="db:update">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[{affectedRows: 1}]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<flow-ref doc:name="Fetch All Data" name="fetchAllData"/>
+			<flow-ref doc:name="Sync DB to SF" name="syncDbToSalesforce"/>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Verify email was matched despite case difference -->
+			<munit-tools:assert-that doc:name="Assert SF Lookup Found Match" expression="#[vars.sfLookup['john.doe@test.com']]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- ================================================================== -->
+	<!-- ERROR HANDLER VALIDATION TESTS - Validate Error Response Payloads -->
+	<!-- ================================================================== -->
+
+	<!-- Test: DB Connectivity Error Handler Response -->
+	<munit:test name="error-handler-db-connectivity-response-test" description="Validate DB connectivity error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB throwing connectivity error -->
+			<munit-tools:mock-when doc:name="Mock DB Error" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:CONNECTIVITY"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="DB:CONNECTIVITY" doc:name="Catch DB Error">
+						<!-- Error handler transforms payload - capture it -->
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure -->
+			<munit-tools:assert-that doc:name="Assert Error Type" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::equalTo('DATABASE_CONNECTION_ERROR')]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::equalTo('Failed to connect to the database')]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: DB Query Execution Error Handler Response -->
+	<munit:test name="error-handler-db-query-response-test" description="Validate DB query execution error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB throwing query execution error -->
+			<munit-tools:mock-when doc:name="Mock DB Query Error" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="DB:QUERY_EXECUTION" doc:name="Catch Query Error">
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure -->
+			<munit-tools:assert-that doc:name="Assert Error Type" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::equalTo('DATABASE_QUERY_ERROR')]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::equalTo('Database query execution failed')]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Salesforce Connectivity Error Handler Response -->
+	<munit:test name="error-handler-sf-connectivity-response-test" description="Validate SF connectivity error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB select success -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF throwing connectivity error -->
+			<munit-tools:mock-when doc:name="Mock SF Error" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="SALESFORCE:CONNECTIVITY"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="SALESFORCE:CONNECTIVITY" doc:name="Catch SF Error">
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure -->
+			<munit-tools:assert-that doc:name="Assert Error Type" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::equalTo('SALESFORCE_CONNECTION_ERROR')]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::containsString('Failed to connect to Salesforce')]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Salesforce Invalid Input Error Handler Response -->
+	<munit:test name="error-handler-sf-validation-response-test" description="Validate SF validation error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB select -->
+			<munit-tools:mock-when doc:name="Mock DB Select" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[{customer_id: 1, salesforce_id: null, first_name: '', last_name: '', email: 'test@test.com', phone: '555-0000', last_modified_date: now()}]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF throwing validation error -->
+			<munit-tools:mock-when doc:name="Mock SF Validation Error" processor="salesforce:upsert">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="SALESFORCE:INVALID_INPUT"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="SALESFORCE:INVALID_INPUT" doc:name="Catch Validation Error">
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure -->
+			<munit-tools:assert-that doc:name="Assert Error Type" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::equalTo('SALESFORCE_VALIDATION_ERROR')]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::containsString('Invalid data for Salesforce')]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Transformation Error Handler Response -->
+	<munit:test name="error-handler-transformation-response-test" description="Validate transformation error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB returning invalid data structure -->
+			<munit-tools:mock-when doc:name="Mock DB Invalid Data" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#['invalid string instead of array']"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+
+			<!-- Mock SF query -->
+			<munit-tools:mock-when doc:name="Mock SF Query" processor="salesforce:query">
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[[]]"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="ANY" doc:name="Catch Any Error">
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+						<set-variable doc:name="Store Error Type" variableName="actualErrorType" value="#[error.errorType.identifier]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure (may be TRANSFORMATION or MULE:EXPRESSION) -->
+			<munit-tools:assert-that doc:name="Assert Error Payload Exists" expression="#[vars.errorPayload]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Error Type Field" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
+	<!-- Test: Generic ANY Error Handler Response -->
+	<munit:test name="error-handler-any-response-test" description="Validate generic ANY error handler response structure">
+		<munit:behavior>
+			<!-- Mock DB throwing a custom/unexpected error -->
+			<munit-tools:mock-when doc:name="Mock DB Custom Error" processor="db:select">
+				<munit-tools:then-return>
+					<munit-tools:error typeId="CUSTOM:UNEXPECTED_ERROR"/>
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+		</munit:behavior>
+
+		<munit:execution>
+			<try doc:name="Try">
+				<flow-ref doc:name="Bidirectional Sync" name="bidirectionalCustomerSync"/>
+				<error-handler>
+					<on-error-continue type="ANY" doc:name="Catch Any Error">
+						<set-variable doc:name="Store Error Payload" variableName="errorPayload" value="#[payload]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</munit:execution>
+
+		<munit:validation>
+			<!-- Validate error response structure from ANY handler -->
+			<munit-tools:assert-that doc:name="Assert Error Type Present" expression="#[vars.errorPayload.errorType]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Message" expression="#[vars.errorPayload.message]" is="#[MunitTools::equalTo('An unexpected error occurred')]"/>
+			<munit-tools:assert-that doc:name="Assert Details Present" expression="#[vars.errorPayload.details]" is="#[MunitTools::notNullValue()]"/>
+			<munit-tools:assert-that doc:name="Assert Timestamp Present" expression="#[vars.errorPayload.timestamp]" is="#[MunitTools::notNullValue()]"/>
+		</munit:validation>
+	</munit:test>
+
 </mule>

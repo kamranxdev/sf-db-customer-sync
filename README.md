@@ -431,82 +431,555 @@ Each test follows the **Given-When-Then** pattern:
 └─────────────────────────────────────────────────────────┘
 ```
 
-### Key Test Cases
+### Detailed Test Explanations
 
 #### 1. Happy Path Tests
 
-| Test | Validates |
-|------|-----------|
-| `db-to-sf-sync-test` | ✅ DB customers fetched<br>✅ SF upsert succeeds<br>✅ DB updated with SF IDs |
-| `sf-to-db-sync-test` | ✅ SF contacts fetched<br>✅ New customers inserted to DB<br>✅ SF IDs linked |
-| `db-to-sf-email-match-test` | ✅ Existing SF contact found by email<br>✅ UPDATE instead of CREATE |
-| `bidirectional-full-sync-test` | ✅ Both directions work<br>✅ No duplicates created |
+##### Test: `db-to-sf-sync-test`
+**Purpose**: Verify successful synchronization from Database to Salesforce
+
+```
+Given:
+  DB returns: 2 customers (John Doe, Jane Smith) - no SF IDs
+  SF returns: Empty list (no existing contacts)
+  
+When:
+  1. fetchAllData loads both datasets
+  2. syncDbToSalesforce processes DB customers
+  
+Then:
+  ✅ vars.dbCustomers contains 2 records
+  ✅ SF upsert creates 2 new contacts
+  ✅ DB updated with new Salesforce IDs
+  ✅ Payload is not null
+```
+
+##### Test: `sf-to-db-sync-test`
+**Purpose**: Verify successful synchronization from Salesforce to Database
+
+```
+Given:
+  DB returns: Empty list (no customers)
+  SF returns: 2 contacts (Alice, Bob)
+  
+When:
+  1. fetchAllData loads both datasets
+  2. syncSalesforceToDb finds SF-only contacts
+  
+Then:
+  ✅ vars.sfContacts contains 2 records
+  ✅ vars.sfOnlyContacts contains 2 records
+  ✅ Both contacts inserted to DB with SF IDs
+```
+
+##### Test: `db-to-sf-email-match-test`
+**Purpose**: Verify email-based matching finds existing Salesforce contacts
+
+```
+Given:
+  DB returns: John Doe (john.doe@test.com, sf_id: null)
+  SF returns: John Doe (john.doe@test.com, Id: 003EXISTING)
+  
+When:
+  1. fetchAllData creates email lookup map
+  2. syncDbToSalesforce matches by email
+  
+Then:
+  ✅ vars.sfLookup contains email mapping
+  ✅ Existing SF contact found (UPDATE not CREATE)
+  ✅ DB record linked to existing SF ID
+```
+
+##### Test: `bidirectional-full-sync-test`
+**Purpose**: Verify complete bidirectional sync without duplicates
+
+```
+Given:
+  DB returns: 1 customer (John)
+  SF returns: 1 contact (Alice)
+  
+When:
+  1. fetchAllData loads both
+  2. syncDbToSalesforce syncs John → SF
+  3. syncSalesforceToDb syncs Alice → DB
+  
+Then:
+  ✅ vars.dbCustomers = 1
+  ✅ vars.sfContacts = 1
+  ✅ vars.sfOnlyContacts = 1 (Alice)
+  ✅ No duplicates created
+  ✅ Both systems have both records
+```
 
 #### 2. Edge Case Tests
 
-| Test | Validates |
-|------|-----------|
-| `empty-email-filtering-test` | ✅ Records without emails filtered out |
-| `null-sf-id-handling-test` | ✅ Null SF IDs handled gracefully |
-| `case-insensitive-email-match-test` | ✅ Email matching works regardless of case |
-| `large-dataset-test` | ✅ Performance with 100 records |
-| `sf-to-db-no-new-records-test` | ✅ No duplicates when all records exist |
-| `db-to-sf-empty-records-test` | ✅ Handles empty DB gracefully |
-| `sf-to-db-empty-sf-test` | ✅ Handles empty SF gracefully |
-| `sf-query-missing-fields-test` | ✅ Handles null fields with defaults |
+##### Test: `empty-email-filtering-test`
+**Purpose**: Verify records without emails are filtered out
+
+```
+Given:
+  DB returns: 3 records
+    - Record 1: email = "valid@test.com"
+    - Record 2: email = ""
+    - Record 3: email = null
+  SF returns: Empty list
+  
+When:
+  syncDbToSalesforce filters by email
+  
+Then:
+  ✅ vars.mappedRecords contains only 1 record
+  ✅ Empty and null emails excluded
+  ✅ Only valid record sent to SF
+```
+
+##### Test: `null-sf-id-handling-test`
+**Purpose**: Verify null Salesforce IDs don't cause DB update errors
+
+```
+Given:
+  DB returns: 2 customers
+  SF upsert returns: Mixed results
+    - Record 1: {id: "003XXX", success: true}
+    - Record 2: {id: null, success: false}
+  
+When:
+  Preparing DB updates
+  
+Then:
+  ✅ Filter removes null SF IDs
+  ✅ Only successful record (003XXX) updates DB
+  ✅ No constraint violations
+```
+
+##### Test: `case-insensitive-email-match-test`
+**Purpose**: Verify email matching works regardless of case
+
+```
+Given:
+  DB returns: john@test.com (lowercase)
+  SF returns: JOHN@TEST.COM (uppercase)
+  
+When:
+  Email lookup uses lower() function
+  
+Then:
+  ✅ Match found despite case difference
+  ✅ No duplicate creation
+  ✅ Existing SF record updated
+```
+
+##### Test: `large-dataset-test`
+**Purpose**: Verify performance with large number of records
+
+```
+Given:
+  DB returns: 100 customers
+  SF returns: Empty list
+  
+When:
+  Processing all 100 records
+  
+Then:
+  ✅ All 100 customers fetched
+  ✅ All 100 mapped records created
+  ✅ Performance acceptable
+  ✅ No memory issues
+```
+
+##### Test: `sf-to-db-no-new-records-test`
+**Purpose**: Verify no duplicates when all SF contacts exist in DB
+
+```
+Given:
+  DB returns: Alice (alice@test.com, sf_id: 003AAA1)
+  SF returns: Alice (alice@test.com, Id: 003AAA1)
+  
+When:
+  syncSalesforceToDb checks for SF-only contacts
+  
+Then:
+  ✅ vars.sfOnlyContacts is empty (size = 0)
+  ✅ No insert operation performed
+  ✅ No duplicates created
+```
+
+##### Test: `db-to-sf-empty-records-test`
+**Purpose**: Verify graceful handling when no DB records exist
+
+```
+Given:
+  DB returns: Empty list []
+  SF returns: Empty list []
+  
+When:
+  Running sync flows
+  
+Then:
+  ✅ vars.dbCustomers size = 0
+  ✅ No errors thrown
+  ✅ "No DB records to sync" logged
+```
+
+##### Test: `sf-to-db-empty-sf-test`
+**Purpose**: Verify graceful handling when no SF contacts exist
+
+```
+Given:
+  DB returns: 1 customer (John)
+  SF returns: Empty list []
+  
+When:
+  syncSalesforceToDb looks for SF-only contacts
+  
+Then:
+  ✅ vars.sfContacts size = 0
+  ✅ vars.sfOnlyContacts size = 0
+  ✅ No insert operations
+  ✅ No errors thrown
+```
+
+##### Test: `sf-query-missing-fields-test`
+**Purpose**: Verify handling of SF contacts with null/missing fields
+
+```
+Given:
+  SF returns: Contact with null FirstName and null Phone
+    {Id: "003AAA", FirstName: null, LastName: "Doe", 
+     Email: "john@test.com", Phone: null}
+  
+When:
+  Transforming to DB format with defaults
+  
+Then:
+  ✅ first_name defaults to ""
+  ✅ last_name uses actual value
+  ✅ phone defaults to null
+  ✅ No transformation errors
+```
 
 #### 3. Error Handling Tests
 
-**Integration Tests** (6 tests):
+##### Test: `db-to-sf-db-error-test`
+**Purpose**: Verify database connectivity error handling
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Test Flow → Trigger Error → Catch Error           │
-├─────────────────────────────────────────────────────┤
-│  db-to-sf-db-error-test                            │
-│  └─► Mock db:select throw DB:CONNECTIVITY          │
-│      └─► Expect: DB:CONNECTIVITY error raised      │
-│                                                     │
-│  db-query-execution-error-test                     │
-│  └─► Mock db:select throw DB:QUERY_EXECUTION       │
-│      └─► Expect: DB:QUERY_EXECUTION error raised   │
-│                                                     │
-│  sf-invalid-input-error-test                       │
-│  └─► Mock sf:upsert throw SF:INVALID_INPUT         │
-│      └─► Expect: SF:INVALID_INPUT error raised     │
-│                                                     │
-│  transformation-error-test                         │
-│  └─► Mock with malformed data                      │
-│      └─► Expect: MULE:EXPRESSION error raised      │
-│                                                     │
-│  sf-upsert-partial-failure-test                    │
-│  └─► Mock sf:upsert with mixed success/failure     │
-│      └─► Expect: Only successful records processed │
-│                                                     │
-│  bidirectional-flow-error-test                     │
-│  └─► Mock main flow error                          │
-│      └─► Expect: Global error handler invoked      │
-└─────────────────────────────────────────────────────┘
+Given:
+  db:select is mocked to throw DB:CONNECTIVITY error
+  
+When:
+  fetchAllData attempts to query database
+  
+Then:
+  ✅ DB:CONNECTIVITY error is raised
+  ✅ Global error handler catches it
+  ✅ Error logged with details
+  ✅ Test expects error type: DB:CONNECTIVITY
 ```
 
-**Error Response Validation Tests** (6 tests):
+**Error Response**:
+```json
+{
+  "errorType": "DATABASE_CONNECTION_ERROR",
+  "message": "Failed to connect to the database",
+  "details": "Connection refused: localhost:3306"
+}
+```
 
-These tests validate the JSON structure returned by error handlers:
+##### Test: `db-query-execution-error-test`
+**Purpose**: Verify database query execution error handling
 
-```xml
-<!-- Test triggers error and validates response -->
-<try>
-  <flow-ref name="fetchAllData"/>  <!-- Triggers mocked error -->
-  <error-handler>
-    <on-error-continue type="DB:CONNECTIVITY">
-      <!-- Validate error response structure -->
-      <assert payload.errorType = "DATABASE_CONNECTION_ERROR"/>
-      <assert payload.message exists/>
-      <assert payload.timestamp exists/>
-      <assert payload.flowName exists/>
-    </on-error-continue>
-  </error-handler>
-</try>
+```
+Given:
+  db:select throws DB:QUERY_EXECUTION error
+  (simulates invalid SQL, constraint violations, etc.)
+  
+When:
+  fetchAllData executes query
+  
+Then:
+  ✅ DB:QUERY_EXECUTION error raised
+  ✅ Error handler processes it
+  ✅ Appropriate error message logged
+```
+
+**Use Cases**:
+- Invalid SQL syntax
+- Table/column not found
+- Database constraint violations
+- Permission denied errors
+
+##### Test: `db-update-error-test`
+**Purpose**: Verify database update operation error handling
+
+```
+Given:
+  db:select returns 1 customer
+  sf:query returns empty
+  sf:upsert succeeds with ID
+  db:update throws DB:QUERY_EXECUTION error
+  
+When:
+  syncDbToSalesforce tries to update DB with SF ID
+  
+Then:
+  ✅ DB:QUERY_EXECUTION error raised
+  ✅ Error occurs after successful SF upsert
+  ✅ Partial success scenario handled
+```
+
+##### Test: `db-to-sf-sf-error-test`
+**Purpose**: Verify Salesforce connectivity error during upsert
+
+```
+Given:
+  db:select returns 1 customer
+  sf:query returns empty
+  sf:upsert throws SALESFORCE:CONNECTIVITY error
+  
+When:
+  syncDbToSalesforce attempts upsert
+  
+Then:
+  ✅ SALESFORCE:CONNECTIVITY error raised
+  ✅ DB query succeeded but SF failed
+  ✅ Error propagated correctly
+```
+
+**Error Response**:
+```json
+{
+  "errorType": "SALESFORCE_CONNECTION_ERROR",
+  "message": "Failed to connect to Salesforce. Check credentials and security token.",
+  "details": "Authentication failure"
+}
+```
+
+##### Test: `sf-to-db-sf-error-test`
+**Purpose**: Verify Salesforce connectivity error during query
+
+```
+Given:
+  db:select returns customers
+  sf:query throws SALESFORCE:CONNECTIVITY error
+  
+When:
+  fetchAllData attempts to query Salesforce
+  
+Then:
+  ✅ SALESFORCE:CONNECTIVITY error raised
+  ✅ Occurs during data fetch phase
+  ✅ Error handler invoked
+```
+
+##### Test: `sf-invalid-input-error-test`
+**Purpose**: Verify Salesforce validation error handling
+
+```
+Given:
+  db:select returns customer with invalid data
+  sf:upsert throws SALESFORCE:INVALID_INPUT error
+  (missing required fields, invalid format, etc.)
+  
+When:
+  syncDbToSalesforce attempts upsert
+  
+Then:
+  ✅ SALESFORCE:INVALID_INPUT error raised
+  ✅ Validation error details captured
+  ✅ User-friendly error message returned
+```
+
+**Error Response**:
+```json
+{
+  "errorType": "SALESFORCE_VALIDATION_ERROR",
+  "message": "Invalid data for Salesforce. Check required fields.",
+  "details": "Required field missing: LastName"
+}
+```
+
+##### Test: `transformation-error-test`
+**Purpose**: Verify DataWeave transformation error handling
+
+```
+Given:
+  db:select returns malformed data structure
+  DataWeave transformation fails with invalid expression
+  
+When:
+  Attempting to transform data
+  
+Then:
+  ✅ MULE:EXPRESSION error raised
+  ✅ Transformation error caught
+  ✅ Error details include expression info
+```
+
+**Causes**:
+- Malformed data structure
+- Invalid DataWeave expression
+- Type mismatch errors
+- Null pointer in transformation
+
+##### Test: `sf-upsert-partial-failure-test`
+**Purpose**: Verify handling of partial Salesforce upsert failures
+
+```
+Given:
+  db:select returns 3 customers
+  sf:upsert returns mixed results:
+    - Record 1: {id: "003AAA", success: true}
+    - Record 2: {id: "003BBB", success: true}
+    - Record 3: {id: null, success: false, error: "Validation"}
+  
+When:
+  Processing upsert results and updating DB
+  
+Then:
+  ✅ Successful records (003AAA, 003BBB) processed
+  ✅ Failed record (null) filtered out
+  ✅ Only 2 DB updates performed
+  ✅ No errors thrown
+```
+
+**Real-World Scenario**:
+```
+Batch of 100 records:
+├─ 95 succeed → Update DB with SF IDs
+├─ 5 fail → Log errors, skip DB update
+└─ Overall process continues successfully
+```
+
+##### Test: `db-insert-constraint-error-test`
+**Purpose**: Verify database constraint violation during SF-to-DB sync
+
+```
+Given:
+  DB has existing customer: john@test.com
+  SF returns contact: john@test.com (duplicate email)
+  db:insert throws DB:QUERY_EXECUTION (unique constraint)
+  
+When:
+  syncSalesforceToDb attempts to insert
+  
+Then:
+  ✅ DB:QUERY_EXECUTION error raised
+  ✅ Constraint violation detected
+  ✅ ON DUPLICATE KEY UPDATE would prevent this in reality
+```
+
+##### Test: `bidirectional-flow-error-test`
+**Purpose**: Verify main flow error handling via global error handler
+
+```
+Given:
+  Main flow: bidirectionalCustomerSync
+  db:select throws DB:CONNECTIVITY error
+  
+When:
+  Flow execution begins
+  
+Then:
+  ✅ DB:CONNECTIVITY error raised
+  ✅ Global error handler catches it
+  ✅ Error logged at flow level
+  ✅ Graceful failure (no crash)
+```
+
+#### 4. Error Response Validation Tests
+
+These tests verify the **structure** of error responses returned by error handlers.
+
+##### Test: `error-handler-db-connectivity-response-test`
+**Purpose**: Validate DB connectivity error response structure
+
+```
+Test Pattern:
+  <try>
+    <flow-ref name="fetchAllData"/>  ← Triggers DB:CONNECTIVITY
+    <error-handler>
+      <on-error-continue type="DB:CONNECTIVITY">
+        <!-- Capture error response -->
+        <set-variable name="errorResponse" value="#[payload]"/>
+      </on-error-continue>
+    </error-handler>
+  </try>
+  
+Assertions:
+  ✅ payload.errorType = "DATABASE_CONNECTION_ERROR"
+  ✅ payload.message exists and is not empty
+  ✅ payload.details contains error description
+  ✅ payload.timestamp is valid date format
+  ✅ payload.flowName = "bidirectionalCustomerSync"
+```
+
+##### Test: `error-handler-db-query-response-test`
+**Purpose**: Validate DB query execution error response structure
+
+```
+Validates:
+  ✅ errorType = "DATABASE_QUERY_ERROR"
+  ✅ message = "Database query execution failed"
+  ✅ details includes SQL error information
+  ✅ timestamp in ISO format
+  ✅ flowName correctly populated
+```
+
+##### Test: `error-handler-sf-connectivity-response-test`
+**Purpose**: Validate Salesforce connectivity error response structure
+
+```
+Validates:
+  ✅ errorType = "SALESFORCE_CONNECTION_ERROR"
+  ✅ message = "Failed to connect to Salesforce..."
+  ✅ details includes authentication/network error
+  ✅ timestamp and flowName present
+```
+
+##### Test: `error-handler-sf-validation-response-test`
+**Purpose**: Validate Salesforce validation error response structure
+
+```
+Validates:
+  ✅ errorType = "SALESFORCE_VALIDATION_ERROR"
+  ✅ message = "Invalid data for Salesforce..."
+  ✅ details includes field-level validation errors
+  ✅ Response helps identify what to fix
+```
+
+##### Test: `error-handler-transformation-response-test`
+**Purpose**: Validate transformation error response structure
+
+```
+Validates:
+  ✅ errorType = "TRANSFORMATION_ERROR"
+  ✅ message = "Data transformation failed"
+  ✅ details includes DataWeave expression error
+  ✅ Helps debug transformation issues
+```
+
+##### Test: `error-handler-any-response-test`
+**Purpose**: Validate generic ANY error handler response structure
+
+```
+Validates:
+  ✅ errorType = actual error type identifier
+  ✅ message = "An unexpected error occurred"
+  ✅ details includes raw error information
+  ✅ Catch-all for unhandled error types
+```
+
+**Why Response Validation Matters**:
+```
+┌─────────────────────────────────────────────────┐
+│  Error Response Consistency = Better UX         │
+├─────────────────────────────────────────────────┤
+│  ✅ Frontend can parse responses reliably       │
+│  ✅ Monitoring systems can categorize errors    │
+│  ✅ Debugging is easier with structured data    │
+│  ✅ API consumers get actionable information    │
+└─────────────────────────────────────────────────┘
 ```
 
 ### Error Handler Coverage
